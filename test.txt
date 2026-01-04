@@ -10,9 +10,9 @@ const CONFIG = {
   // - accentSoft: мягкий акцент для заливок карточек/кнопок
   // - gradient: прозрачный градиент для фона Dashboard
   // - shadow: лёгкая тень для карточек (работает через setBorder с цветом границы = bg)
-  accentSoft: '#DCE4ED',
-  gradient: ['#F8F9FA', '#EDF2F7'],
-  shadow: '#E8ECEF',
+  accentSoft: '#DDE5EC',
+  gradient: ['#F8F9FA', '#E7EDF2'],
+  shadow: '#D6DEE6',
 
   limits: {
     habits: 15,
@@ -29,12 +29,12 @@ const CONFIG = {
   colors: {
     bg: "#F8F9FA",         
     card: "#FFFFFF",       
-    inputField: "#F1F3F5", 
-    textMain: "#343A40",   
-    textMuted: "#868E96",  
-    border: "#DEE2E6",     
-    accent: "#495057",     
-    progressBarEmpty: "#E9ECEF", 
+    inputField: "#E9EFF4",
+    textMain: "#2F363D",
+    textMuted: "#6C757D",
+    border: "#D5DDE3",
+    accent: "#2F3E46",
+    progressBarEmpty: "#E3E7EB",
     status: {
       doneBg: "#E6FCF5", doneText: "#0CA678", // Шалфей / Мята
       failBg: "#FFF5F5", failText: "#C92A2A", // Красный
@@ -196,9 +196,11 @@ function createPremiumHabitTracker() {
   sheet.setHiddenGridlines(true);
   try { sheet.setTabColor(CONFIG.colors.textMain); } catch(e) {}
   
-  // Настройка сетки
-  sheet.getRange(1, 1, 300, 60).setBackground(CONFIG.colors.bg)
-       .setFontFamily(CONFIG.fontMain).setVerticalAlignment("middle");
+  // Настройка сетки c мягким градиентом (верх светлее, низ чуть насыщеннее)
+  const gridRange = sheet.getRange(1, 1, 300, 60);
+  sheet.getRange(1, 1, 150, 60).setBackground(CONFIG.gradient[0]);
+  sheet.getRange(151, 1, 150, 60).setBackground(CONFIG.gradient[1]);
+  gridRange.setFontFamily(CONFIG.fontMain).setVerticalAlignment("middle");
 
   sheet.setColumnWidth(1, 30);  
   sheet.setColumnWidth(2, 200); 
@@ -504,14 +506,14 @@ function buildEfficiencyChart(sheet) {
 function createDashboard(sheet) {
   // Main Title
   sheet.getRange("B2:O2").merge().setValue("ТРЕКЕР ПРИВЫЧЕК")
-       .setFontSize(36).setFontWeight("bold").setFontColor(CONFIG.colors.textMain)
+       .setFontSize(36).setFontWeight("bold").setFontColor(CONFIG.colors.accent)
        .setHorizontalAlignment("left").setVerticalAlignment("middle")
        .setFontFamily(CONFIG.fontHeader);
 
   // --- ЛЕВЫЙ БЛОК (ОБЩИЙ ПРОЦЕНТ) ---
   const leftBox = sheet.getRange("B5:F18");
   leftBox.setBackground(CONFIG.colors.card)
-         .setBorder(null, null, null, true, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID); 
+         .setBorder(true, true, true, true, null, null, CONFIG.shadow, SpreadsheetApp.BorderStyle.SOLID);
   
   sheet.getRange("B5:F5").merge().setValue("ОБЩИЙ ПРОГРЕСС").setFontSize(9).setFontWeight("bold").setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted).setVerticalAlignment("bottom");
   
@@ -538,7 +540,8 @@ function createDashboard(sheet) {
 
   // --- ПРАВЫЙ БЛОК (ЦИФРЫ) ---
   const rightBox = sheet.getRange("G5:O11");
-  rightBox.setBackground(CONFIG.colors.card);
+  rightBox.setBackground(CONFIG.colors.card)
+         .setBorder(true, true, true, true, null, null, CONFIG.shadow, SpreadsheetApp.BorderStyle.SOLID);
   
   // Заголовки (сдвинуты влево)
   const labels = [
@@ -578,18 +581,18 @@ function createDashboard(sheet) {
 function createCharacterCard(sheet) {
   sheet.getRange("Q2:T16").setBackground(CONFIG.colors.card);
 
-  sheet.getRange("Q3:T5").merge().setValue("🧘‍♂️") 
+  sheet.getRange("Q3:T5").merge().setValue("🧘‍♂️")
        .setFontSize(60).setHorizontalAlignment("center").setVerticalAlignment("middle")
-       .setFontColor(CONFIG.colors.textMain);
+       .setFontColor(CONFIG.colors.accent);
 
-  sheet.getRange("Q6:T6").merge().setValue("ПРОФИЛЬ") 
-       .setFontSize(12).setFontWeight("bold").setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMain)
+  sheet.getRange("Q6:T6").merge().setValue("ПРОФИЛЬ")
+       .setFontSize(12).setFontWeight("bold").setHorizontalAlignment("center").setFontColor(CONFIG.colors.accent)
        .setFontFamily(CONFIG.fontHeader);
   
   sheet.getRange("Q7:T7").merge().setValue("Баланс и Дисциплина") 
        .setFontSize(8).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted);
 
-  sheet.getRange("R8:S8").setBorder(null, null, true, null, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange("R8:S8").setBorder(null, null, true, null, null, null, CONFIG.shadow, SpreadsheetApp.BorderStyle.SOLID);
 
   const totalDoneFormula = `COUNTIF(C14:I1000, "✅")`;
   
@@ -600,7 +603,7 @@ function createCharacterCard(sheet) {
   sheet.getRange("S11:T11").merge().setFormula(`=${totalDoneFormula}`).setFontSize(11).setFontWeight("bold").setHorizontalAlignment("left").setFontFamily(CONFIG.fontMono);
 
   // Minimalist Sparkline
-  sheet.getRange("Q13:T13").merge().setFormula(`=SPARKLINE(MOD(${totalDoneFormula}, 10), {"charttype", "bar"; "max", 10; "color1", "${CONFIG.colors.textMain}"; "color2", "${CONFIG.colors.bg}"})`)
+  sheet.getRange("Q13:T13").merge().setFormula(`=SPARKLINE(MOD(${totalDoneFormula}, 10), {"charttype", "bar"; "max", 10; "color1", "${CONFIG.colors.accent}"; "color2", "${CONFIG.colors.bg}"})`)
        .setVerticalAlignment("middle");
   
   sheet.getRange("Q14:T14").merge().setValue("до след. уровня").setFontSize(7).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted).setFontStyle("italic");
@@ -639,7 +642,7 @@ function createRichWeekCard(sheet, startRow, weekNum, wStart, wEnd) {
 
   // Заголовок недели
   sheet.getRange(startRow, 2).setValue(`НЕДЕЛЯ ${weekNum}`)
-       .setFontSize(18).setFontWeight("bold").setFontColor(CONFIG.colors.textMain)
+       .setFontSize(18).setFontWeight("bold").setFontColor(CONFIG.colors.accent)
        .setVerticalAlignment("bottom").setFontFamily(CONFIG.fontHeader);
        
   sheet.getRange(startRow, 12, 1, 4).merge().setValue(`${dateFmt(wStart)} — ${dateFmt(wEnd)}`)
@@ -672,7 +675,7 @@ function createRichWeekCard(sheet, startRow, weekNum, wStart, wEnd) {
 
   // 2. Бар
   sheet.getRange(statRow + 2, 12, 1, 4).merge()
-       .setFormula(`=SPARKLINE(0, {"charttype", "bar"; "max", 1; "color1", "${CONFIG.colors.textMain}"; "color2", "${CONFIG.colors.progressBarEmpty}"})`);
+       .setFormula(`=SPARKLINE(0, {"charttype", "bar"; "max", 1; "color1", "${CONFIG.colors.accent}"; "color2", "${CONFIG.colors.progressBarEmpty}"})`);
   
   // 3. Метка
   sheet.getRange(statRow + 3, 12, 1, 4).merge().setValue(ANCHOR_GRADE).setFontSize(8).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted);
