@@ -80,14 +80,43 @@ function onEdit(e) {
 
     const col = range.getColumn();
     const row = range.getRow();
-    if (col < 3 || col > 9) return;     // Только колонки статусов по дням
-    if (row < 14) return;                // Пропускаем шапку/декор
+    const withinStatuses = col >= 3 && col <= 9 && row >= 14 && row <= 1000;
+    if (!withinStatuses) return;        // Только колонки статусов по дням
 
     const val = e.value;
     const prev = e.oldValue;
+
+    if (!STATUS_SYMBOLS.includes(val)) {
+      if (prev === undefined) {
+        range.clearContent();
+      } else {
+        range.setValue(prev);
+      }
+      SpreadsheetApp.getActive().toast('Используйте только статусы: ' + STATUS_SYMBOLS.join(' '), 'Неверный статус');
+      return;
+    }
+
+    const editedRows = range.getNumRows();
+    const editedCols = range.getNumColumns();
+    const intersectsStatuses = row + editedRows - 1 <= 1000 && col + editedCols - 1 <= 9;
+
+    if (intersectsStatuses) {
+      refreshTrackerMetrics(sheet);
+    }
   } catch (err) {
     console.error(err);
+    SpreadsheetApp.getUi().alert('Произошла ошибка при обработке статуса. Пожалуйста, попробуйте ещё раз.');
   }
+}
+
+function refreshTrackerMetrics(sheet) {
+  const startDateCell = sheet.getRange('Y4').getValue();
+  if (startDateCell instanceof Date && !isNaN(startDateCell)) {
+    generateDailyLog(sheet, normalizeToStartOfDay(new Date(startDateCell)));
+  }
+
+  removeOverallPieCharts(sheet);
+  buildOverallPie(sheet);
 }
 function generateDailyLog(sheet, startDate) {
   const logStartRow = 4;
