@@ -1,70 +1,986 @@
+/**
+ * 🎨 PINTEREST AESTHETIC CONFIG (V16.1 - FIXED CHART)
+ * Style: Clean, Editorial, Gender-Neutral (Slate, Sage, Sand)
+ */
+const CONFIG = {
+  sheetName: '✨ Трекер 2025',
+  weeksCount: 4,
+
+  // 💅 Дизайн-подсказки (можно менять под вкус)
+  // - accentSoft: мягкий акцент для заливок карточек/кнопок
+  // - gradient: прозрачный градиент для фона Dashboard
+  // - shadow: лёгкая тень для карточек (работает через setBorder с цветом границы = bg)
+  accentSoft: '#DCE4ED',
+  gradient: ['#F8F9FA', '#EDF2F7'],
+  shadow: '#E8ECEF',
+
+  limits: {
+    habits: 15,
+    badHabits: 6,
+    goals: 6
+  },
+
+  fontMain: "Montserrat", 
+  fontHeader: "Oswald",
+  fontMono: "Roboto Mono", 
+  fontHand: "Caveat",      
+  
+  // Палитра "Slate & Sage"
+  colors: {
+    bg: "#F8F9FA",         
+    card: "#FFFFFF",       
+    inputField: "#F1F3F5", 
+    textMain: "#343A40",   
+    textMuted: "#868E96",  
+    border: "#DEE2E6",     
+    accent: "#495057",     
+    progressBarEmpty: "#E9ECEF", 
+    status: {
+      doneBg: "#E6FCF5", doneText: "#0CA678", // Шалфей / Мята
+      failBg: "#FFF5F5", failText: "#C92A2A", // Красный
+      planBg: "#FFF9DB", planText: "#F08C00", // Оранжевый
+      skipBg: "#F8F9FA", skipText: "#ADB5BD"  // Серый
+    }
+  }
+};
+
+const ANCHOR_BAD_HABITS = "⛔ ВРЕДНЫЕ ПРИВЫЧКИ";
+const ANCHOR_GOALS = "🎯 ЦЕЛИ 2025";
+const ANCHOR_KPI = "Эффективность дня:";
+const ANCHOR_GRADE = "ДИНАМИКА";
+const LOG_START_COLUMN = 25; // Колонка Y: лог расположен справа на основном листе трекера
+const STATUS_SYMBOLS = ['✅', '❌', '🟡', '💤'];
+
+/**
+ * ⚙️ МЕНЮ
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🎱 Меню Трекера')
+    .addItem('➕ Добавить привычку (везде)', 'addHabitToAllWeeks')
+    .addItem('➖ Удалить привычку', 'removeHabitFromAllWeeks')
+    .addSeparator()
+    .addItem('➕ Добавить цель', 'addGlobalGoal')
+    .addItem('➖ Удалить цель', 'removeGlobalGoal')
+    .addSeparator()
+    .addItem('➕ Добавить в "Вредные привычки"', 'addBadHabit')
+    .addItem('➖ Удалить из "Вредных привычек"', 'removeBadHabit')
+    .addSeparator()
+    .addItem('🧹 Очистить галочки', 'clearProgressOnly')
+    .addItem('↻ Сброс трекера (Пересоздать)', 'createPremiumHabitTracker')
+    .addToUi();
+}
+
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    const range = e.range;
+    const sheet = range.getSheet();
+    if (sheet.getName() !== CONFIG.sheetName) return;
+
+    const col = range.getColumn();
+    const row = range.getRow();
+    if (col < 3 || col > 9) return;     // Только колонки статусов по дням
+    if (row < 14) return;                // Пропускаем шапку/декор
+
+    const val = e.value;
+    const prev = e.oldValue;
+  } catch (err) {
+    console.error(err);
+  }
+}
 function generateDailyLog(sheet, startDate) {
   const logStartRow = 4;
+  const colDate = 25; // Y
+  const colCount = 26; // Z
+  const colEff = 27;  // AA (для красоты или доп. данных)
 
-  const colDate = 25;       // Y
-  const colDaily = 26;      // Z (дневное кол-во ✅)
-  const colCumulative = 27; // AA (накопительно)
-  const colText = 28;       // AB ("N задач")
-
-  // Очистка старого лога (Y:AC, 365 строк)
+  // Очистка старого лога
   sheet.getRange(logStartRow, colDate, 365, 5).clearContent();
-
-  // Заголовки
-  sheet.getRange("Y2").setValue("📅 ДНЕВНИК")
-    .setFontWeight("bold")
-    .setFontColor(CONFIG.colors.textMain);
-
+  
+  // Заголовки лога
+  sheet.getRange("Y2").setValue("📅 ДНЕВНИК").setFontWeight("bold").setFontColor(CONFIG.colors.textMain);
   sheet.getRange("Y3").setValue("Дата").setFontSize(8).setFontColor(CONFIG.colors.textMuted);
   sheet.getRange("Z3").setValue("✅").setFontSize(8).setFontColor(CONFIG.colors.textMuted);
-  sheet.getRange("AA3").setValue("Σ").setFontSize(8).setFontColor(CONFIG.colors.textMuted); // накопительно
-  sheet.getRange("AB3").setValue("Результат").setFontSize(8).setFontColor(CONFIG.colors.textMuted);
+  sheet.getRange("AA3").setValue("Результат").setFontSize(8).setFontColor(CONFIG.colors.textMuted);
 
+  // Получаем координаты блоков недель
   const weekBlocks = detectWeekBlocks(sheet);
   const colLetters = ["C", "D", "E", "F", "G", "H", "I"]; // ПН-ВС
-
+  
   let currentRow = logStartRow;
 
   weekBlocks.forEach((block, index) => {
     let weekStart = new Date(startDate);
     weekStart.setDate(startDate.getDate() + (index * 7));
 
+    // Определяем диапазон привычек (от заголовка дней до строки KPI)
+    // block.headerRow - это строка с "ПН, ВТ...", привычки начинаются сразу за ней
+    // block.habitsEnd - это строка перед KPI
     const rStart = block.headerRow + 1;
     const rEnd = block.habitsEnd;
 
     for (let d = 0; d < 7; d++) {
-      const dayDate = new Date(weekStart);
+      let dayDate = new Date(weekStart);
       dayDate.setDate(weekStart.getDate() + d);
+      
+      // 1. Дата (Столбец Y)
+      const cellDate = sheet.getRange(currentRow, colDate);
+      cellDate.setValue(dayDate).setNumberFormat("dd.MM ddd"); // Пример: 20.01 Пн
 
-      // Y: дата
-      sheet.getRange(currentRow, colDate)
-        .setValue(dayDate)
-        .setNumberFormat("dd.MM ddd");
-
-      // Z: дневной COUNTIF ✅
+      // 2. Формула подсчета (Столбец Z)
+      // Считаем галочки в конкретном столбце дня
       const colLetter = colLetters[d];
-      const formulaDaily = `=COUNTIF(${colLetter}${rStart}:${colLetter}${rEnd}, "✅")`;
-      sheet.getRange(currentRow, colDaily)
-        .setFormula(formulaDaily)
-        .setHorizontalAlignment("center");
+      // Формула: =COUNTIF(C15:C20; "✅")
+      const formulaCount = `=COUNTIF(${colLetter}${rStart}:${colLetter}${rEnd}, "✅")`;
+      
+      const cellCount = sheet.getRange(currentRow, colCount);
+      cellCount.setFormula(formulaCount).setHorizontalAlignment("center");
 
-      // AA: накопительно (с начала лога)
-      // Если Z пустая (на всякий), то AA пустая
-      const formulaCum = `=IF(Z${currentRow}="",,SUM($Z$${logStartRow}:Z${currentRow}))`;
-      sheet.getRange(currentRow, colCumulative)
-        .setFormula(formulaCum)
-        .setHorizontalAlignment("center");
-
-      // AB: текст "N задач"
+      // 3. Текстовый результат (Столбец AA - то, что вы просили)
+      // Формула склеивает текст: "5 задач"
       const formulaText = `=Z${currentRow} & " задач"`;
-      sheet.getRange(currentRow, colText)
-        .setFormula(formulaText)
-        .setFontColor(CONFIG.colors.textMuted)
-        .setFontSize(9);
+      sheet.getRange(currentRow, colEff).setFormula(formulaText)
+           .setFontColor(CONFIG.colors.textMuted).setFontSize(9);
 
       currentRow++;
     }
-
-    // Пустая строка между неделями — только если это НЕ последняя неделя
-    if (index < weekBlocks.length - 1) currentRow++;
+    // Добавляем пустую строку между неделями в логе для красоты (опционально)
+    currentRow++; 
   });
+}
+function getCycleStartDate(rawDate) {
+  const base = new Date(rawDate);
+  if (!(base instanceof Date) || isNaN(base)) return null;
+  normalizeToStartOfDay(base);
+  const day = base.getDay();
+  const diff = base.getDate() - day + (day === 0 ? -6 : 1);
+  base.setDate(diff);
+  return base;
+}
+
+function normalizeToStartOfDay(date) {
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+/**
+ * 🚀 1. СОЗДАНИЕ ТРЕКЕРА
+ */
+function createPremiumHabitTracker() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt('📅 Дата старта', 'Введите дату (YYYY-MM-DD) или оставьте пустым для старта с ПОНЕДЕЛЬНИКА текущей недели:', ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() == ui.Button.CANCEL) return;
+
+  const today = normalizeToStartOfDay(new Date());
+  let startDate = today;
+  const textDate = response.getResponseText();
+
+  if (textDate && textDate.includes("-")) {
+    const parts = textDate.split("-");
+    if (parts.length === 3) {
+      startDate = getCycleStartDate(new Date(parts[0], parts[1] - 1, parts[2]));
+    }
+  } else {
+    startDate = getCycleStartDate(today);
+  }
+
+  CONFIG.weeksCount = promptWeeksCount(ui, CONFIG.weeksCount);
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const oldSheet = ss.getSheetByName(CONFIG.sheetName);
+  if (oldSheet) ss.deleteSheet(oldSheet);
+  
+  const sheet = ss.insertSheet(CONFIG.sheetName);
+  sheet.setHiddenGridlines(true);
+  try { sheet.setTabColor(CONFIG.colors.textMain); } catch(e) {}
+  
+  // Настройка сетки
+  sheet.getRange(1, 1, 300, 60).setBackground(CONFIG.colors.bg)
+       .setFontFamily(CONFIG.fontMain).setVerticalAlignment("middle");
+
+  sheet.setColumnWidth(1, 30);  
+  sheet.setColumnWidth(2, 200); 
+  for(let c=3; c<=9; c++) sheet.setColumnWidth(c, 50); 
+  sheet.setColumnWidth(10, 60); 
+  sheet.setColumnWidth(11, 30); 
+  sheet.setColumnWidth(12, 70); 
+  sheet.setColumnWidth(13, 70);
+  sheet.setColumnWidth(14, 70);
+  sheet.setColumnWidth(15, 70);
+  sheet.setColumnWidth(16, 30); 
+  sheet.setColumnWidth(17, 40); 
+  sheet.setColumnWidth(18, 120);
+  sheet.setColumnWidth(19, 90);
+  sheet.setColumnWidth(20, 50);
+  sheet.setRowHeight(2, 80); 
+
+  createDashboard(sheet); 
+  const cardEndRow = createCharacterCard(sheet);
+  createBadHabitsPanel(sheet, cardEndRow + 3); 
+
+  let currentRow = 20;
+  
+  for (let i = 1; i <= CONFIG.weeksCount; i++) {
+    let weekStart = new Date(startDate);
+    weekStart.setDate(startDate.getDate() + (i - 1) * 7);
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    
+    const result = createRichWeekCard(sheet, currentRow, i, weekStart, weekEnd);
+    currentRow = result.endRow + 2; 
+  }
+  
+  sheet.setFrozenRows(2);
+  applyGlobalColors(sheet);
+
+  // Добавляем базовую привычку и ставим её в план на все дни
+  addHabitToAllWeeks({ defaultStatus: '🟡' });
+
+  // Перестраиваем круговую диаграмму уже с фактическими данными
+  removeOverallPieCharts(sheet);
+  generateDailyLog(sheet, startDate);
+  buildOverallPie(sheet);
+
+
+  SpreadsheetApp.getActive().toast("Трекер готов! График исправлен.", "Успех");
+}
+
+function applyGlobalColors(sheet) {
+   const range = sheet.getRange("C14:I1000");
+   const r1 = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('✅').setBackground(CONFIG.colors.status.doneBg).setFontColor(CONFIG.colors.status.doneText).setRanges([range]).build();
+   const r2 = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('❌').setBackground(CONFIG.colors.status.failBg).setFontColor(CONFIG.colors.status.failText).setRanges([range]).build();
+   const r3 = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('🟡').setBackground(CONFIG.colors.status.planBg).setFontColor(CONFIG.colors.status.planText).setRanges([range]).build();
+   const r4 = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('💤').setBackground(CONFIG.colors.status.skipBg).setFontColor(CONFIG.colors.status.skipText).setRanges([range]).build();
+   sheet.setConditionalFormatRules([r1, r2, r3, r4]);
+}
+
+function promptWeeksCount(ui, currentValue) {
+  const prompt = ui.prompt(
+    '⏳ Длительность цикла',
+    'Введите количество недель (2–8). Пусто = оставить ' + currentValue + ' недель.',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (prompt.getSelectedButton() === ui.Button.CANCEL) return currentValue;
+
+  const raw = parseInt(prompt.getResponseText(), 10);
+  if (isNaN(raw)) return currentValue;
+
+  return Math.min(8, Math.max(2, raw));
+}
+
+function columnLetter(colNumber) {
+  let temp = colNumber;
+  let letter = '';
+  while (temp > 0) {
+    const mod = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    temp = Math.floor((temp - mod) / 26);
+  }
+  return letter;
+}
+
+function detectLogDays(logSheet, startCol) {
+  const lastRow = logSheet.getLastRow();
+  if (lastRow < 4) return 0;
+
+  const dates = logSheet.getRange(4, startCol, lastRow - 3, 1).getValues();
+  let count = 0;
+  dates.forEach(row => {
+    const val = row[0];
+    if (val instanceof Date && !isNaN(val)) count++;
+  });
+  return count;
+}
+
+function detectWeekBlocks(sheet) {
+  const weekLabels = sheet.createTextFinder("НЕДЕЛЯ").findAll() || [];
+  const kpiLabels = sheet.createTextFinder(ANCHOR_KPI).findAll() || [];
+
+  const weekStarts = weekLabels
+    .filter(r => r.getColumn() === 2)
+    .map(r => r.getRow())
+    .sort((a, b) => a - b);
+
+  const kpiRows = kpiLabels
+    .filter(r => r.getColumn() === 2)
+    .map(r => r.getRow())
+    .sort((a, b) => a - b);
+
+  const blocks = [];
+  for (let i = 0; i < weekStarts.length; i++) {
+    const startRow = weekStarts[i];
+    const headerRow = startRow + 2;
+    const habitsStart = headerRow + 1;
+    const kpiRow = kpiRows[i] || (habitsStart + 1);
+    const habitsEnd = Math.max(habitsStart, kpiRow - 1);
+    blocks.push({ startRow, headerRow, habitsStart, habitsEnd });
+  }
+  return blocks;
+}
+
+function clearLogCharts(sheet, startCol) {
+  const titlesToRemove = ['Итоговая эффективность (накопительно)', 'Дневной баланс (+/-)', 'Эффективность месяца'];
+  sheet.getCharts().forEach(chart => {
+    const opts = chart.getOptions() || {};
+    const title = (opts.title || '').toString();
+    const ranges = chart.getRanges ? chart.getRanges() : [];
+
+    const overlapsLog = ranges.some(r => {
+      const cStart = r.getColumn();
+      const cEnd = cStart + r.getNumColumns() - 1;
+      return cStart <= startCol + 3 && cEnd >= startCol;
+    });
+
+    const matchTitle = titlesToRemove.indexOf(title) !== -1 || /эффективность месяца/i.test(title);
+    if (matchTitle || overlapsLog) {
+      sheet.removeChart(chart);
+    }
+  });
+
+  SpreadsheetApp.flush();
+}
+
+
+/**
+ * 📊 2. DASHBOARD С КОЛЬЦЕВОЙ ДИАГРАММОЙ
+ */
+function removeOverallPieCharts(sheet) {
+  sheet.getCharts().forEach(chart => {
+    const ranges = chart.getRanges ? chart.getRanges() : [];
+    const touchesPieData = ranges.some(r => r.getColumn() === 21 && r.getRow() === 1 && r.getNumColumns() >= 2 && r.getNumRows() >= 5);
+    const touchesPieCard = chart.getContainerInfo && (() => {
+      const info = chart.getContainerInfo();
+      if (!info) return false;
+      const anchorRow = info.getAnchorRow();
+      const anchorCol = info.getAnchorColumn();
+      return anchorRow >= 11 && anchorRow <= 16 && anchorCol >= 2 && anchorCol <= 6;
+    })();
+
+    if (touchesPieData || touchesPieCard) {
+      sheet.removeChart(chart);
+    }
+  });
+}
+
+function buildOverallPie(sheet) {
+  // 1. Подготовка данных (без изменений)
+  const donutDataRange = sheet.getRange("U1:V5");
+  donutDataRange.clearContent();
+
+  const totalDone = `COUNTIF(C14:I1000, "✅")`;
+
+  sheet.getRange("U1").setValue("Category");
+  sheet.getRange("V1").setValue("Value");
+
+  // Важно: порядок цветов зависит от порядка строк здесь
+  sheet.getRange("U2").setValue("Done"); 
+  sheet.getRange("V2").setFormula(`=${totalDone}`); // Зеленый
+
+  sheet.getRange("U3").setValue("Fail");
+  sheet.getRange("V3").setFormula(`=COUNTIF(C14:I1000, "❌")`); // Красный
+
+  sheet.getRange("U4").setValue("Plan");
+  sheet.getRange("V4").setFormula(`=COUNTIF(C14:I1000, "🟡")`); // Оранжевый
+
+  sheet.getRange("U5").setValue("Skip");
+  sheet.getRange("V5").setFormula(`=COUNTIF(C14:I1000, "💤")`); // Серый
+
+  // Убеждаемся, что фон карточки белый
+  sheet.getRange("B11:F18").setBackground(CONFIG.colors.card);
+
+  SpreadsheetApp.flush();
+
+  // 2. Настройка внешнего вида и позиции
+  const chartBuilder = sheet.newChart()
+    .asPieChart()
+    .addRange(sheet.getRange("U1:V5"))
+    .setNumHeaders(1)
+    
+    // --- ГЛАВНАЯ НАСТРОЙКА ПОЗИЦИИ ---
+    // 11 = Строка (сразу под цифрой %)
+    // 2  = Колонка B (начало карточки)
+    // 135 = Сдвиг вправо (в пикселях), чтобы попасть в центр
+    // 10  = Сдвиг вниз (в пикселях), небольшой отступ
+    .setPosition(11, 2, 135, 10) 
+    
+    .setOption('legend', { position: 'none' })
+    .setOption('pieSliceText', 'none')
+    
+    // Превращаем пирог в "Пончик" (как на скрине)
+    .setOption('pieHole', 0.6) 
+    
+    // Убираем рамку самой диаграммы, чтобы она слилась с карточкой
+    .setOption('backgroundColor', { fill: 'transparent' }) 
+    
+    .setOption('colors', [
+       CONFIG.colors.status.doneText, // Цвет для Done
+       CONFIG.colors.status.failText, // Цвет для Fail
+       CONFIG.colors.status.planText, // Цвет для Plan
+       CONFIG.colors.status.skipText  // Цвет для Skip (используем серый текст, чтобы было видно)
+    ])
+    // Размер самого виджета
+    .setOption('width', 130)
+    .setOption('height', 130)
+    // Растягиваем круг внутри виджета на максимум
+    .setOption('chartArea', { left: '5%', top: '5%', width: '90%', height: '90%' });
+
+  sheet.insertChart(chartBuilder.build());
+}
+
+/**
+ * 📈 ГРАФИК ЭФФЕКТИВНОСТИ (AREA CHART)
+ */
+function buildEfficiencyChart(sheet) {
+  // Удаляем старые графики
+  sheet.getCharts().forEach(chart => {
+    const container = chart.getContainerInfo();
+    if (container && container.getAnchorColumn() === 7 && container.getAnchorRow() >= 12) {
+      sheet.removeChart(chart);
+    }
+  });
+
+  // Настраиваем фон (G12:O18)
+  const bgRange = sheet.getRange("G12:O18");
+  bgRange.setBackground(CONFIG.colors.card)
+         .setBorder(null, null, null, null, null, null); 
+         
+  sheet.getRange("G18:O18").setBorder(null, null, true, null, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+
+  // Данные: Y = Даты
+  const rangeDates = sheet.getRange("Y4:Y31");
+  
+  // ВАЖНО: Берем Z (Накопительный итог) вместо AD (Ежедневный).
+  // Это даст красивую "гору", которая начинается с 0 и растет.
+  const rangeValues = sheet.getRange("Z4:Z31"); 
+
+  const chartBuilder = sheet.newChart()
+    .asAreaChart()
+    .addRange(rangeDates)
+    .addRange(rangeValues)
+    .setNumHeaders(0)
+    
+    // ПОЗИЦИЯ
+    .setPosition(12, 7, 0, 0)
+    
+    // ЭСТЕТИКА
+    .setOption('title', '')
+    .setOption('legend', { position: 'none' })
+    .setOption('backgroundColor', { fill: 'transparent' }) 
+    .setOption('colors', [CONFIG.colors.status.doneText]) 
+    .setOption('areaOpacity', 0.2) 
+    .setOption('lineWidth', 2)
+    .setOption('pointSize', 0)
+    
+    // --- ГЛАДКОСТЬ ЛИНИИ ---
+    .setOption('curveType', 'function') 
+    // -----------------------
+    
+    // ОСИ
+    .setOption('hAxis', { 
+      textPosition: 'none', 
+      gridlines: { count: 0 },
+      baselineColor: 'none'
+    })
+    .setOption('vAxis', { 
+      textPosition: 'none', 
+      gridlines: { count: 0 },
+      baselineColor: 'none',
+      // Ставим минимум 0, чтобы график "лежал" на полу, если нет минусов
+      viewWindowMode: 'explicit',
+      viewWindow: { min: 0 } 
+    })
+    
+    // РАЗМЕР
+    .setOption('width', 450)
+    .setOption('height', 160)
+    .setOption('chartArea', { left: 0, top: 10, width: '100%', height: '85%' });
+
+  sheet.insertChart(chartBuilder.build());
+}
+
+function createDashboard(sheet) {
+  // Main Title
+  sheet.getRange("B2:O2").merge().setValue("ТРЕКЕР ПРИВЫЧЕК")
+       .setFontSize(36).setFontWeight("bold").setFontColor(CONFIG.colors.textMain)
+       .setHorizontalAlignment("left").setVerticalAlignment("middle")
+       .setFontFamily(CONFIG.fontHeader);
+
+  // --- ЛЕВЫЙ БЛОК (ОБЩИЙ ПРОЦЕНТ) ---
+  const leftBox = sheet.getRange("B5:F18");
+  leftBox.setBackground(CONFIG.colors.card)
+         .setBorder(null, null, null, true, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID); 
+  
+  sheet.getRange("B5:F5").merge().setValue("ОБЩИЙ ПРОГРЕСС").setFontSize(9).setFontWeight("bold").setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted).setVerticalAlignment("bottom");
+  
+  const totalCheck = `COUNTIF(C14:I1000, "✅")`;
+  const totalAll = `(COUNTIF(C14:I1000, "✅")+COUNTIF(C14:I1000, "❌")+COUNTIF(C14:I1000, "🟡"))`;
+  const percentMath = `IF(${totalAll}=0, 0, ${totalCheck}/${totalAll})`;
+
+  // Большая цифра
+  sheet.getRange("B6:F9").merge().setFormula("=" + percentMath)
+       .setNumberFormat("0%").setFontSize(55).setFontWeight("bold") 
+       .setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontFamily(CONFIG.fontMono)
+       .setFontColor(CONFIG.colors.textMain);
+  
+  // ASCII Bar
+  const blocksTotal = 15;
+  const filledBlocks = `INT(${percentMath} * ${blocksTotal})`;
+  const emptyBlocks = `${blocksTotal} - ${filledBlocks}`;
+  const asciiBar = `REPT("▮", ${filledBlocks}) & REPT("▯", ${emptyBlocks})`;
+
+  sheet.getRange("B10:F10").merge().setFormula("=" + asciiBar)
+       .setFontFamily("Courier New")
+       .setHorizontalAlignment("center").setFontSize(12).setFontColor(CONFIG.colors.accent);
+
+  // --- ПРАВЫЙ БЛОК (ЦИФРЫ) ---
+  const rightBox = sheet.getRange("G5:O11");
+  rightBox.setBackground(CONFIG.colors.card);
+  
+  // Заголовки (сдвинуты влево)
+  const labels = [
+    {r: "G5:H5", t: "ГОТОВО"}, {r: "I5:J5", t: "ПЛАН"}, 
+    {r: "K5:L5", t: "СРЫВ"}
+  ];
+  labels.forEach(l => {
+    sheet.getRange(l.r).merge().setValue(l.t).setHorizontalAlignment("center").setVerticalAlignment("bottom")
+         .setFontSize(9).setFontWeight("bold").setFontColor(CONFIG.colors.textMuted);
+  });
+  
+  // Метка для "Отдых/Пропуск"
+  sheet.getRange("M5:M5").setValue("ОТДЫХ").setHorizontalAlignment("center").setVerticalAlignment("bottom")
+       .setFontSize(9).setFontWeight("bold").setFontColor(CONFIG.colors.textMuted);
+
+  // Цифры
+  sheet.getRange("G6:H9").merge().setFormula(`=${totalCheck}`).setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontSize(28).setFontFamily(CONFIG.fontMono).setFontColor(CONFIG.colors.status.doneText);
+  sheet.getRange("I6:J9").merge().setFormula(`=COUNTIF(C14:I1000, "🟡")`).setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontSize(28).setFontFamily(CONFIG.fontMono).setFontColor(CONFIG.colors.status.planText);
+  sheet.getRange("K6:L9").merge().setFormula(`=COUNTIF(C14:I1000, "❌")`).setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontSize(28).setFontFamily(CONFIG.fontMono).setFontColor(CONFIG.colors.status.failText);
+  sheet.getRange("M6:M9").merge().setFormula(`=COUNTIF(C14:I1000, "💤")`).setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontSize(28).setFontFamily(CONFIG.fontMono).setFontColor(CONFIG.colors.status.skipText);
+
+  // Декоративная линия
+  sheet.getRange("G10:O10").setBorder(false, false, true, false, false, false, CONFIG.colors.bg, SpreadsheetApp.BorderStyle.SOLID_THICK);
+
+  removeOverallPieCharts(sheet);
+  buildOverallPie(sheet);
+  //buildEfficiencyChart(sheet); 
+}
+
+/**
+ * 🧘 3. КАРТОЧКА ПЕРСОНАЖА
+ */
+function createCharacterCard(sheet) {
+  sheet.getRange("Q2:T16").setBackground(CONFIG.colors.card);
+
+  sheet.getRange("Q3:T5").merge().setValue("🧘‍♂️") 
+       .setFontSize(60).setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontColor(CONFIG.colors.textMain);
+
+  sheet.getRange("Q6:T6").merge().setValue("ПРОФИЛЬ") 
+       .setFontSize(12).setFontWeight("bold").setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMain)
+       .setFontFamily(CONFIG.fontHeader);
+  
+  sheet.getRange("Q7:T7").merge().setValue("Баланс и Дисциплина") 
+       .setFontSize(8).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted);
+
+  sheet.getRange("R8:S8").setBorder(null, null, true, null, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+
+  const totalDoneFormula = `COUNTIF(C14:I1000, "✅")`;
+  
+  sheet.getRange("Q10:R10").merge().setValue("LVL").setFontSize(9).setFontColor(CONFIG.colors.textMuted).setHorizontalAlignment("right").setFontFamily(CONFIG.fontMono);
+  sheet.getRange("S10:T10").merge().setFormula(`=INT(SQRT(${totalDoneFormula}/2))`).setFontSize(11).setFontWeight("bold").setHorizontalAlignment("left").setFontFamily(CONFIG.fontMono);
+
+  sheet.getRange("Q11:R11").merge().setValue("XP").setFontSize(9).setFontColor(CONFIG.colors.textMuted).setHorizontalAlignment("right").setFontFamily(CONFIG.fontMono);
+  sheet.getRange("S11:T11").merge().setFormula(`=${totalDoneFormula}`).setFontSize(11).setFontWeight("bold").setHorizontalAlignment("left").setFontFamily(CONFIG.fontMono);
+
+  // Minimalist Sparkline
+  sheet.getRange("Q13:T13").merge().setFormula(`=SPARKLINE(MOD(${totalDoneFormula}, 10), {"charttype", "bar"; "max", 10; "color1", "${CONFIG.colors.textMain}"; "color2", "${CONFIG.colors.bg}"})`)
+       .setVerticalAlignment("middle");
+  
+  sheet.getRange("Q14:T14").merge().setValue("до след. уровня").setFontSize(7).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted).setFontStyle("italic");
+
+  const questStart = 18;
+  sheet.getRange(questStart, 17, 1, 4).setBackground(CONFIG.colors.card);
+  sheet.getRange(questStart, 17, 1, 4).merge().setValue(ANCHOR_GOALS)
+       .setFontSize(10).setFontWeight("bold").setHorizontalAlignment("left")
+       .setFontColor(CONFIG.colors.textMain).setFontFamily(CONFIG.fontHeader);
+
+  return questStart + 1; 
+}
+
+function createBadHabitsPanel(sheet, startRow) {
+  if (!startRow) startRow = 35;
+  const panel = sheet.getRange(startRow, 17, 2, 4);
+  panel.setBackground(CONFIG.colors.card);
+
+  sheet.getRange(startRow, 17, 1, 4).merge().setValue(ANCHOR_BAD_HABITS)
+       .setFontSize(10).setFontWeight("bold").setHorizontalAlignment("left")
+       .setFontColor(CONFIG.colors.textMain).setFontFamily(CONFIG.fontHeader); 
+
+  const hRow = startRow + 1;
+  sheet.getRange(hRow, 17, 1, 4).merge().setValue("  Дней без срывов:").setFontSize(8)
+       .setFontColor(CONFIG.colors.textMuted).setVerticalAlignment("top");
+}
+
+/**
+ * 📅 4. ГЕНЕРАТОР НЕДЕЛИ (РУС)
+ */
+function createRichWeekCard(sheet, startRow, weekNum, wStart, wEnd) {
+  const dateFmt = (d) => Utilities.formatDate(d, Session.getScriptTimeZone(), "dd.MM");
+  const baseHeight = 16; 
+  
+  sheet.getRange(startRow, 2, baseHeight, 14).setBackground(CONFIG.colors.card);
+
+  // Заголовок недели
+  sheet.getRange(startRow, 2).setValue(`НЕДЕЛЯ ${weekNum}`)
+       .setFontSize(18).setFontWeight("bold").setFontColor(CONFIG.colors.textMain)
+       .setVerticalAlignment("bottom").setFontFamily(CONFIG.fontHeader);
+       
+  sheet.getRange(startRow, 12, 1, 4).merge().setValue(`${dateFmt(wStart)} — ${dateFmt(wEnd)}`)
+       .setHorizontalAlignment("right").setFontSize(10).setFontColor(CONFIG.colors.textMuted)
+       .setVerticalAlignment("bottom").setFontFamily(CONFIG.fontMono);
+
+  // Разделитель
+  sheet.getRange(startRow, 2, 1, 14).setBorder(null, null, true, null, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+
+  const headerRow = startRow + 2;
+  const days = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
+  sheet.getRange(headerRow, 3, 1, 7).setValues([days])
+       .setHorizontalAlignment("center").setFontSize(8).setFontWeight("bold").setFontColor(CONFIG.colors.textMuted);
+  sheet.getRange(headerRow, 10).setValue("ТРЕНД").setHorizontalAlignment("center").setFontSize(7).setFontColor(CONFIG.colors.textMuted);
+
+  const bodyRow = headerRow + 1; 
+  const kpiRow = bodyRow;
+  sheet.getRange(kpiRow, 2).setValue(ANCHOR_KPI).setFontSize(8).setFontColor(CONFIG.colors.textMuted).setFontStyle("italic");
+  
+  sheet.getRange(startRow + 1, 11, baseHeight - 1, 1).setBorder(null, null, null, true, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+
+  const statRow = startRow + 5; 
+
+  // --- ПРАВАЯ ПАНЕЛЬ СТАТИСТИКИ ---
+  // 1. Процент
+  sheet.getRange(statRow, 12, 2, 4).merge().setValue("0%") 
+       .setFontSize(36).setFontWeight("bold") 
+       .setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontColor(CONFIG.colors.textMain).setFontFamily(CONFIG.fontMono);
+
+  // 2. Бар
+  sheet.getRange(statRow + 2, 12, 1, 4).merge()
+       .setFormula(`=SPARKLINE(0, {"charttype", "bar"; "max", 1; "color1", "${CONFIG.colors.textMain}"; "color2", "${CONFIG.colors.progressBarEmpty}"})`);
+  
+  // 3. Метка
+  sheet.getRange(statRow + 3, 12, 1, 4).merge().setValue(ANCHOR_GRADE).setFontSize(8).setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted);
+
+  // 4. Колонны
+  sheet.getRange(statRow + 4, 12, 1, 4).merge()
+       .setFormula(`=SPARKLINE({0,0,0,0,0,0,0}, {"charttype", "column"; "color", "${CONFIG.colors.accent}"; "axis", false})`)
+       .setBackground(CONFIG.colors.card);
+
+  // Заметки
+  const winRow = statRow + 5;
+  sheet.getRange(winRow, 12, 1, 4).merge().setValue("Заметки и итоги:")
+       .setFontSize(8).setFontColor(CONFIG.colors.textMuted);
+  
+  const notesRange = sheet.getRange(winRow + 1, 12, 3, 4).merge();
+  notesRange.setValue("")
+       .setBackground(CONFIG.colors.inputField) 
+       .setBorder(false, false, false, false, null, null) 
+       .setFontFamily(CONFIG.fontHand) 
+       .setFontSize(12)
+       .setVerticalAlignment("top").setWrap(true).setFontColor(CONFIG.colors.textMain);
+
+  // Настроение
+  const emoRow = startRow + baseHeight - 2;
+  sheet.getRange(emoRow, 12, 1, 4).merge().setValue("НАСТРОЙ")
+       .setFontSize(8).setHorizontalAlignment("center").setVerticalAlignment("bottom")
+       .setFontColor(CONFIG.colors.textMuted);
+
+  const ruleEmo = SpreadsheetApp.newDataValidation().requireValueInList(['⚡', '🙂', '😐', '🌫️', '💀'], true).build();
+  sheet.getRange(emoRow + 1, 12, 1, 4).merge().setDataValidation(ruleEmo).setValue("🙂")
+       .setHorizontalAlignment("center").setVerticalAlignment("middle")
+       .setFontSize(14)
+       .setBackground(CONFIG.colors.inputField) 
+       .setBorder(true, true, true, true, null, null, CONFIG.colors.border, SpreadsheetApp.BorderStyle.SOLID);
+
+  // Группировка
+  const groupRange = sheet.getRange(startRow + 1, 1, baseHeight - 1);
+  groupRange.shiftRowGroupDepth(1);
+
+  return { endRow: startRow + baseHeight, habitStartRow: null };
+}
+
+/**
+ * ➕ ДОБАВИТЬ ПРИВЫЧКУ
+ */
+function addHabitToAllWeeks(opts) {
+  const options = opts || {};
+  const defaultStatus = options.defaultStatus;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+  
+  const textFinder = sheet.createTextFinder(ANCHOR_KPI);
+  const ranges = textFinder.findAll();
+  if (ranges.length === 0) return;
+  
+  let rows = ranges.map(r => r.getRow());
+  rows.sort((a, b) => a - b);
+
+  const firstKpiRow = rows[0];
+  let tempRow = firstKpiRow - 1;
+  let habitCount = 0;
+  while (habitCount < 20) {
+    const val = sheet.getRange(tempRow, 3).getValue();
+    if (val === "ПН") break; 
+    tempRow--;
+    habitCount++;
+  }
+  
+  if (habitCount >= CONFIG.limits.habits) {
+    SpreadsheetApp.getUi().alert(`Лимит: максимум ${CONFIG.limits.habits} привычек.`);
+    return;
+  }
+
+  let previousHabitRow = null; 
+  let rowsAddedOffset = 0;     
+
+  for (let i = 0; i < rows.length; i++) {
+    const kpiRow = rows[i] + rowsAddedOffset;
+    
+    sheet.insertRowBefore(kpiRow);
+    const newRow = kpiRow;
+    
+    sheet.getRange(newRow, 1, 1, 20).setBackground(CONFIG.colors.bg).setFontWeight("normal").setBorder(null, null, null, null, null, null);
+    sheet.getRange(newRow, 2, 1, 14).setBackground(CONFIG.colors.card);
+    
+    const nameCell = sheet.getRange(newRow, 2);
+    nameCell.setFontSize(9).setFontColor(CONFIG.colors.textMain).setVerticalAlignment("middle").setHorizontalAlignment("left");
+    
+    if (i === 0) {
+      nameCell.setValue(`Привычка ${habitCount + 1}`);
+      previousHabitRow = newRow;
+    } else {
+      nameCell.setFormula(`=B${previousHabitRow}`);
+      previousHabitRow = newRow;
+    }
+
+    const checkRange = sheet.getRange(newRow, 3, 1, 7);
+    const rule = SpreadsheetApp.newDataValidation().requireValueInList(STATUS_SYMBOLS, true).build();
+    checkRange.setDataValidation(rule).setHorizontalAlignment("center").setVerticalAlignment("middle");
+    if (defaultStatus && STATUS_SYMBOLS.indexOf(defaultStatus) !== -1) {
+      checkRange.setValues([Array(7).fill(defaultStatus)]);
+    }
+
+    // Огоньки (Стрик)
+    const rangeDays = `C${newRow}:I${newRow}`;
+    const fireFormula = `=IF(COUNTIF(${rangeDays}, "✅")=7, "⚡⚡", IF(COUNTIF(${rangeDays}, "✅")>=5, "⚡", SPARKLINE(COUNTIF(${rangeDays}, "✅"), {"charttype","bar";"max",7;"color1","${CONFIG.colors.textMain}";"color2","${CONFIG.colors.bg}"})))`;
+    sheet.getRange(newRow, 10).setFormula(fireFormula).setVerticalAlignment("middle").setFontSize(8).setFontColor(CONFIG.colors.accent);
+
+    sheet.setRowHeight(newRow, 24); 
+
+    // Обновление статистики
+    const actualKpiRow = newRow + 1;
+    
+    let headerRow = newRow - 1;
+    let safeguard = 0;
+    while(sheet.getRange(headerRow, 3).getValue() !== "ПН" && safeguard < 20) {
+      headerRow--;
+      safeguard++;
+    }
+    const habitsStartRow = headerRow + 1;
+    const habitsEndRow = newRow; 
+    
+    const rangeWeekAll = `C${habitsStartRow}:I${habitsEndRow}`;
+    
+    const colLetters = ["C", "D", "E", "F", "G", "H", "I"];
+    for(let d=0; d<7; d++) {
+      const col = colLetters[d];
+      const dayRange = `${col}${habitsStartRow}:${col}${habitsEndRow}`;
+      const kpiForm = `=IF((COUNTIF(${dayRange},"✅")+COUNTIF(${dayRange},"❌")+COUNTIF(${dayRange},"🟡"))=0, 0, COUNTIF(${dayRange},"✅")/(COUNTIF(${dayRange},"✅")+COUNTIF(${dayRange},"❌")+COUNTIF(${dayRange},"🟡")))`;
+      sheet.getRange(actualKpiRow, 3 + d).setFormula(kpiForm).setNumberFormat("0%");
+    }
+    
+    let statLabelRow = actualKpiRow + 1;
+    safeguard = 0;
+    while(sheet.getRange(statLabelRow, 12).getValue() !== ANCHOR_GRADE && safeguard < 15) {
+      statLabelRow++;
+      safeguard++;
+    }
+    
+    if (sheet.getRange(statLabelRow, 12).getValue() === ANCHOR_GRADE) {
+        const percentRow = statLabelRow - 3; 
+        const barRow = statLabelRow - 1;     
+        const columnsRow = statLabelRow + 1; 
+        
+        const weekPercentFormula = `IF((COUNTIF(${rangeWeekAll}, "✅")+COUNTIF(${rangeWeekAll}, "❌")+COUNTIF(${rangeWeekAll}, "🟡"))=0, 0, COUNTIF(${rangeWeekAll}, "✅")/(COUNTIF(${rangeWeekAll}, "✅")+COUNTIF(${rangeWeekAll}, "❌")+COUNTIF(${rangeWeekAll}, "🟡")))`;
+        
+        sheet.getRange(percentRow, 12, 2, 4).merge()
+             .setFormula(`=${weekPercentFormula}`)
+             .setNumberFormat("0%")
+             .setFontSize(36).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle").setFontFamily(CONFIG.fontMono);
+
+        const barFormula = `=SPARKLINE(${weekPercentFormula}, {"charttype", "bar"; "max", 1; "color1", "${CONFIG.colors.textMain}"; "color2", "${CONFIG.colors.progressBarEmpty}"})`;
+        sheet.getRange(barRow, 12, 1, 4).merge().setFormula(barFormula);
+
+        const kpiDailyRange = `C${actualKpiRow}:I${actualKpiRow}`;
+        const columnFormula = `=SPARKLINE(${kpiDailyRange}, {"charttype", "column"; "color", "${CONFIG.colors.accent}"; "highcolor", "${CONFIG.colors.status.doneText}"; "ymin", 0; "ymax", 1})`;
+        
+        sheet.getRange(columnsRow, 12, 1, 4).merge()
+             .setFormula(columnFormula)
+             .setBackground(CONFIG.colors.card);
+    }
+
+    rowsAddedOffset++; 
+  }
+  
+  SpreadsheetApp.getActive().toast("Привычка добавлена!", "ОК");
+}
+
+function removeHabitFromAllWeeks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+  const ui = SpreadsheetApp.getUi();
+  const textFinder = sheet.createTextFinder(ANCHOR_KPI);
+  const ranges = textFinder.findAll();
+  if (ranges.length === 0) return;
+  
+  const checkRow = ranges[0].getRow();
+  
+  if (sheet.getRange(checkRow - 1, 3).getValue() === "ПН") {
+     ui.alert("Нет привычек для удаления!"); return;
+  }
+  
+  const response = ui.alert('Удалить последнюю привычку во всех неделях?', ui.ButtonSet.YES_NO);
+  if (response == ui.Button.NO) return;
+  
+  ranges.sort((a, b) => b.getRow() - a.getRow());
+  
+  ranges.forEach(range => {
+    sheet.deleteRow(range.getRow() - 1);
+  });
+  
+  SpreadsheetApp.getActive().toast("Удалено.", "ОК");
+}
+
+function clearProgressOnly() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('🗑️ Очистить прогресс?', 'Это удалит только галочки. Продолжить?', ui.ButtonSet.YES_NO);
+  if (response == ui.Button.NO) return;
+  
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.sheetName);
+  sheet.getRange("C14:I1000").clearContent(); 
+  
+  SpreadsheetApp.getActive().toast("Прогресс очищен.", "Готово");
+}
+
+function addGlobalGoal() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+
+  const finder = sheet.createTextFinder(ANCHOR_GOALS).findNext();
+  if (!finder) return;
+  
+  const startRow = finder.getRow();
+  
+  let count = 0;
+  let lastRow = startRow;
+  
+  while (count < 20) {
+    if (sheet.getRange(lastRow + 1, 17).getBackground() !== CONFIG.colors.card) break;
+    lastRow++;
+    count++;
+  }
+  
+  if (count >= CONFIG.limits.goals) return;
+  
+  const insertRow = lastRow + 1;
+  sheet.getRange(insertRow, 17, 1, 4).insertCells(SpreadsheetApp.Dimension.ROWS);
+  
+  const r = insertRow;
+  sheet.getRange(r, 17, 1, 4).setBackground(CONFIG.colors.card);
+  sheet.getRange(r, 17).insertCheckboxes();
+  sheet.getRange(r, 18, 1, 3).merge().setValue("Новая цель")
+       .setFontSize(9).setVerticalAlignment("middle").setFontColor(CONFIG.colors.textMain);
+       
+  const rule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=$Q${r}=TRUE`).setFontColor(CONFIG.colors.textMuted).setStrikethrough(true)
+      .setRanges([sheet.getRange(r, 18, 1, 3)]).build();
+  let rules = sheet.getConditionalFormatRules();
+  rules.push(rule);
+  sheet.setConditionalFormatRules(rules);
+}
+
+function removeGlobalGoal() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+
+  const finder = sheet.createTextFinder(ANCHOR_GOALS).findNext();
+  if (!finder) return;
+
+  const startRow = finder.getRow();
+  let lastRow = startRow;
+  while (sheet.getRange(lastRow + 1, 17).getBackground() === CONFIG.colors.card) {
+    lastRow++;
+  }
+  if (lastRow === startRow) return;
+  sheet.getRange(lastRow, 17, 1, 4).deleteCells(SpreadsheetApp.Dimension.ROWS);
+}
+
+function addBadHabit() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+
+  const finder = sheet.createTextFinder(ANCHOR_BAD_HABITS).findNext();
+  if (!finder) return;
+  
+  const startRow = finder.getRow() + 1; 
+  let count = 0;
+  let lastRow = startRow;
+  while (count < 20) {
+    if (sheet.getRange(lastRow + 1, 17).getValue() !== "•") break;
+    lastRow++; count++;
+  }
+  if (count >= CONFIG.limits.badHabits) return;
+  
+  const insertRow = lastRow + 1;
+  sheet.getRange(insertRow, 17, 1, 4).insertCells(SpreadsheetApp.Dimension.ROWS);
+  const r = insertRow;
+  
+  sheet.getRange(r, 17, 1, 4).setBackground(CONFIG.colors.card);
+  sheet.getRange(r, 17).setValue("•").setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted);
+  sheet.getRange(r, 18).setValue("Вредная привычка").setFontSize(9).setFontColor(CONFIG.colors.textMain);
+  
+  const dateCell = sheet.getRange(r, 19);
+  const dateRule = SpreadsheetApp.newDataValidation().requireDate().build();
+  dateCell.setDataValidation(dateRule).setBackground(CONFIG.colors.inputField)
+          .setHorizontalAlignment("center").setFontColor(CONFIG.colors.textMuted).setNumberFormat("dd.MM");
+  
+  sheet.getRange(r, 20).setFormula(`=IF(S${r}="", "-", IF(S${r} > TODAY(), 0, DATEDIF(S${r}, TODAY(), "D")))`)
+            .setHorizontalAlignment("center").setFontWeight("bold").setFontSize(9).setFontColor(CONFIG.colors.textMain);
+}
+
+function removeBadHabit() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.sheetName);
+  if (!sheet) return;
+
+  const finder = sheet.createTextFinder(ANCHOR_BAD_HABITS).findNext();
+  if (!finder) return;
+  
+  const startRow = finder.getRow() + 1;
+  let lastRow = startRow;
+  while (sheet.getRange(lastRow + 1, 17).getValue() === "•") lastRow++;
+  if (lastRow === startRow) return;
+  sheet.getRange(lastRow, 17, 1, 4).deleteCells(SpreadsheetApp.Dimension.ROWS);
 }
